@@ -1,0 +1,24 @@
+#:kivy 2.0.0
+#:import hex kivy.utils.get_color_from_hex
+
+<FloatLayout>:
+    canvas.before:
+        Color:
+            rgba: hex('#FFFFE0')
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    Image:
+        id: img
+
+<Button>:
+    text_size: self.width - dp(10), self.height - dp(10)
+    halign: 'center'
+    valign: 'center'
+
+<Label>:
+    text_size: self.width - dp(10), self.height - dp(10)
+    halign: 'center'
+    valign: 'center'
+

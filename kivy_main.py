@@ -54,13 +54,22 @@ class MainScreen(FloatLayout):
         # areaThr - константа обозначающая минимальную площадь контура
         areaThr = 10000
         i = 0
+        contours1=[]
         for cnt in contours:
             area = cv2.contourArea(cnt)
             if (area > areaThr):
                 i = i + 1
+                contours1.append(cnt)
                 x, y, width, height = cv2.boundingRect(cnt)
                 filename = 'output' + str(i) + '.jpg'
                 cv2.imwrite(filename, img[y:y + height - 1, x:x + width - 1])
+        contour_sizes = [(cv2.contourArea(cnt), cnt) for cnt in contours1]
+        biggest_contour = max(contour_sizes, key=lambda x: x[0])[1]
+        x,y,width,height=cv2.boundingRect(biggest_contour)
+        filename = 'output_biggest_contour.jpg'
+        cv2.imwrite(filename, img[y:y + height - 1, x:x + width - 1])
+        self.filePath = filename
+        self.ids.img.reload()
 
     def preproc(self, widget):
         img = cv2.imread(self.filePath)
@@ -78,92 +87,91 @@ class MainScreen(FloatLayout):
         cv2.waitKey()
 
     def sort_contours(self, cnts, method="left-to-right"):
-        # initialize the reverse flag and sort index
+        # инициализация обратного флага и индекса сортировки
         reverse = False
         i = 0
-        # handle if we need to sort in reverse
+        # перебрать в обратном порядке
         if method == "right-to-left" or method == "bottom-to-top":
             reverse = True
-        # handle if we are sorting against the y-coordinate rather than
-        # the x-coordinate of the bounding box
+        # Если Сортировка по y-коодинате,а не по x-координате
         if method == "top-to-bottom" or method == "bottom-to-top":
             i = 1
-        # construct the list of bounding boxes and sort them from top to
-        # bottom
+        # Сортировка списка прямоугольных контуров сверху вниз
         boundingBoxes = [cv2.boundingRect(c) for c in cnts]
         (cnts, boundingBoxes) = zip(*sorted(zip(cnts, boundingBoxes),
                                             key=lambda b: b[1][i], reverse=reverse))
-        # return the list of sorted contours and bounding boxes
+        # список отсортированных контуров и выделенных прямоугольников
         return (cnts, boundingBoxes)
 
     def recognize_table(self, widget):
         pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-        # read your file
+        # считывание файла
         file = self.filePath
         img = cv2.imread(file, 0)
         res = cv2.resize(img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
         img = res
         img.shape
-        # thresholding the image to a binary image
+        # пороговая бинаризация
         thresh, img_bin = cv2.threshold(img, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-        # inverting the image
+        # инвертирование изображения
         img_bin = 255 - img_bin
         cv2.imwrite('cv_inverted.png', img_bin)
-        # Plotting the image to see the output
+        # Вывод результата
         plotting = plt.imshow(img_bin, cmap='gray')
         plt.show()
 
-        # Length(width) of kernel as 100th of total width
+        # Создание фильтра длинна, ядра которого равно сотой от общей ширины
         kernel_len = np.array(img).shape[1] // 100
-        # Defining a vertical kernel to detect all vertical lines of image
+        # Определение вертикального ядра для нахождения вертикальных линий
         ver_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, kernel_len))
-        # Defining a horizontal kernel to detect all horizontal lines of image
+        # Определение горизонтального ядра для нахождения горизонтальных линий
         hor_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_len, 1))
-        # A kernel of 2x2
+        # Ядро 2x2
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
 
-        # Use vertical kernel to detect and save the vertical lines in a jpg
+        # Использование вертикального ядра для нахождения вертикальных линий и сохранения в jpg
         image_1 = cv2.erode(img_bin, ver_kernel, iterations=3)
         vertical_lines = cv2.dilate(image_1, ver_kernel, iterations=3)
         cv2.imwrite("vertical.jpg", vertical_lines)
-        # Plot the generated image
+        # Вывод результата
         plotting = plt.imshow(image_1, cmap='gray')
         plt.show()
 
-        # Use horizontal kernel to detect and save the horizontal lines in a jpg
+        # Использование горизонтального ядра для нахождения горизонтальныъ линий и сохранения в jpg
         image_2 = cv2.erode(img_bin, hor_kernel, iterations=3)
         horizontal_lines = cv2.dilate(image_2, hor_kernel, iterations=3)
         cv2.imwrite("horizontal.jpg", horizontal_lines)
-        # Plot the generated image
+        # Вывод результата
         plotting = plt.imshow(image_2, cmap='gray')
         plt.show()
 
-        # Combine horizontal and vertical lines in a new third image, with both having same weight.
+        # Объединение горизонтальных и вертикальных линий в новом изображении
         img_vh = cv2.addWeighted(vertical_lines, 0.5, horizontal_lines, 0.5, 0.0)
-        # Eroding and thesholding the image
+        # Эрозия и бинаризация
         img_vh = cv2.erode(~img_vh, kernel, iterations=3)
         thresh, img_vh = cv2.threshold(img_vh, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
         cv2.imwrite("img_vh.jpg", img_vh)
+        # Вычисление побитового исключающего или и отрицания
         bitxor = cv2.bitwise_xor(img, img_vh)
         bitnot = cv2.bitwise_not(bitxor)
-        # Plotting the generated image
+        # Вывод результата
         plotting = plt.imshow(bitnot, cmap='gray')
         plt.show()
 
-        # Detect contours for following box detection
+        # Обнаружение контуров в пустой таблице
         contours, hierarchy = cv2.findContours(img_vh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-        # Sort all the contours by top to bottom.
+        # Сортировака контуров сверху вниз
         contours, boundingBoxes = self.sort_contours(contours, method="top-to-bottom")
 
-        # Creating a list of heights for all detected boxes
+        # Создание списка высот для всех обнаруженных рамок
         heights = [boundingBoxes[i][3] for i in range(len(boundingBoxes))]
-        # Get mean of heights
+        # Вычисление среднего значения высоты
         mean = np.mean(heights)
 
-        # Create list box to store all boxes in
+        # Список для хранения всех рамок
         box = []
-        # Get position (x,y), width and height for every contour and show the contour on image
+        # Получения x и y координата, высоты и ширины рамок
         for c in contours:
             x, y, w, h = cv2.boundingRect(c)
             if (w < 1000 and h < 500):
@@ -172,11 +180,11 @@ class MainScreen(FloatLayout):
         plotting = plt.imshow(image, cmap="gray")
         plt.show()
 
-        # Creating two lists to define row and column in which cell is located
+        # Создание двух списков для определения строки и столбца, в которых находится ячейка
         row = []
         column = []
         j = 0
-        # Sorting the boxes to their respective row and column
+        # Сортировка рамок по соответствующей строке и столбцу
         for i in range(len(box)):
             if (i == 0):
                 column.append(box[i])
@@ -195,14 +203,14 @@ class MainScreen(FloatLayout):
         print(column)
         print(row)
 
-        # calculating maximum number of cells
+        # расчет максимального количества ячеек
         countcol = 0
         for i in range(len(row)):
             countcol = len(row[i])
             if countcol > countcol:
                 countcol = countcol
 
-        # Retrieving the center of each column
+        # Получение центра каждого столбца
         center = [int(row[i][j][0] + row[i][j][2] / 2) for j in range(len(row[i])) if row[0]]
         center = np.array(center)
         center.sort()
@@ -230,6 +238,7 @@ class MainScreen(FloatLayout):
                         y, x, w, h = finalboxes[i][j][k][0], finalboxes[i][j][k][1], finalboxes[i][j][k][2], \
                                      finalboxes[i][j][k][3]
                         finalimg = bitnot[x:x + h, y:y + w]
+                        # Предобработка для каждой ячейки
                         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 1))
                         border = cv2.copyMakeBorder(finalimg, 2, 2, 2, 2, cv2.BORDER_CONSTANT, value=[255, 255])
                         resizing = cv2.resize(border, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
@@ -242,12 +251,12 @@ class MainScreen(FloatLayout):
                         inner = inner + " " + out
                     outer.append(inner)
 
-        # Creating a dataframe of the generated OCR list
+        # Создание фрейма данных сгенерированного списка результатов распознавания
         arr = np.array(outer)
         dataframe = pd.DataFrame(arr.reshape(len(row), countcol))
         print(dataframe)
         self.data = dataframe.style.set_properties(align="left")
-        # Converting it in a excel-file
+        # Конвертация в xls
         self.fileXlsxPath = "output.xlsx"
 
     def data_to_excel(self, widget):
